@@ -14,6 +14,8 @@ from keras.layers import Conv2D, MaxPooling2D, Conv1D, MaxPooling1D
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import LeakyReLU
 
+import seaborn as sns
+
 normalized_data = []
 
 def getDatabase():
@@ -31,6 +33,9 @@ def buildData(ch1, ch2, label):
             normalized_data.append({"label": label,
                     "channel_1": ch1[i] / np.linalg.norm(ch1[i]),
                     "channel_2": ch2[i] / np.linalg.norm(ch2[i])})
+            normalized_data.append({"label": label,
+                    "channel_1": ch1[i],
+                    "channel_2": ch2[i]})
     else:
         raise Exception("Data not formatted")
     return 0
@@ -51,26 +56,64 @@ def consolidateData():
 
 
 # https://missinglink.ai/guides/keras/keras-conv1d-working-1d-convolutional-neural-networks-keras/
-def AnnArchitecture1D(raw):
+def AnnArchitecture1D(raw, epochs):
     x_train, valid_label, y_train, valid_y, classes = getTrainData1D(raw)
-    batch_size = 32
-    epochs = 10
+    batch_size = 256
     num_classes = len(classes)
 
-    model = Sequential()
-    model.add(Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(3000,2)))
-    model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(MaxPooling1D(pool_size=2))
-    model.add(Flatten())
-    model.add(Dense(100, activation='relu'))
-    model.add(Dense(num_classes, activation='softmax'))
+    # model = Sequential()
+    # model.add(Conv1D(filters=128, kernel_size=3, activation='linear', input_shape=(3000,2)))
+    # model.add(LeakyReLU(alpha=0.1))
+    # model.add(MaxPooling1D(pool_size=2))
+    # model.add(Dropout(0.4))
+    # model.add(Conv1D(filters=64, kernel_size=3, activation='linear'))
+    # model.add(LeakyReLU(alpha=0.1))
+    # model.add(MaxPooling1D(pool_size=2))
+    # model.add(Dropout(0.5))
+    # model.add(Flatten())
+    # model.add(Dropout(0.2))
+    # model.add(Dense(128, activation='linear'))
+    # model.add(LeakyReLU(alpha=0.1))
+    # model.add(Dropout(0.3))
+    # model.add(Dense(num_classes if num_classes > 2 else 1, activation='softmax' if num_classes > 2 else 'sigmoid'))
 
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    # model.compile(loss='categorical_crossentropy' if num_classes > 2 else 'binary_crossentropy',
+    #             optimizer='adam', metrics=[keras.metrics.CategoricalAccuracy() if num_classes > 2 else keras.metrics.BinaryAccuracy()])
 
-    model_train = model.fit(y_train, x_train, batch_size=batch_size,epochs=epochs,verbose=0,validation_data=(valid_y, valid_label))
-    test_eval = model.evaluate(valid_y, valid_label, verbose=0)
-    return model, test_eval
+    # model_train = model.fit(y_train, x_train, batch_size=batch_size,epochs=epochs,verbose=1,validation_data=(valid_y, valid_label))
+    # test_eval = model.evaluate(valid_y, valid_label, verbose=0)
+    
+    # model.save("model_{}_epochs.h5py".format(epochs))
+    model = keras.models.load_model("model_{}_epochs.h5py".format(epochs))
+    predicted = np.argmax(model.predict(valid_y), axis=1)
+    true_values = np.argmax(valid_label, axis=1)
+    correct = np.where(predicted==true_values)[0]
+    incorrect = np.where(predicted!=true_values)[0]
+    print("correct: ", len(correct), "incorrect", len(incorrect))
+    
+    dict_model = {0:0,
+                  1:0,
+                  2:0,
+                  3:0,
+                  4:0,
+                  5:0}
+    
+    import copy
+    result = {0:copy.deepcopy(dict_model),
+              1:copy.deepcopy(dict_model),
+              2:copy.deepcopy(dict_model),
+              3:copy.deepcopy(dict_model),
+              4:copy.deepcopy(dict_model),
+              5:copy.deepcopy(dict_model)}
+        
+    for i in range(len(predicted)):
+        result[true_values[i]][predicted[i]] += 1 
+        
+    cf_matrix = []
+    for label in result.keys():
+            cf_matrix.append([result[label][internal_label] for internal_label in result[label].keys()])
+
+    return model, cf_matrix
 
 
 def getTrainData1D(raw):
@@ -80,10 +123,11 @@ def getTrainData1D(raw):
     y = np.column_stack((y,z))
     y = y.reshape(-1, 3000, 2)
     x = x.reshape(-1, 1)
-    x_one_hot = to_categorical(x)    
-
-    x_train, valid_label, y_train, valid_y = train_test_split(x_one_hot, y, test_size=0.3, random_state=13)
     classes = np.unique(x)
+
+    x_one_hot = to_categorical(x)
+
+    x_train, valid_label, y_train, valid_y = train_test_split(x_one_hot if len(classes) > 2 else x, y, test_size=0.3, random_state=13)
     
     return x_train, valid_label, y_train, valid_y, classes
 
@@ -91,14 +135,15 @@ def getTrainData1D(raw):
 # https://www.datacamp.com/community/tutorials/convolutional-neural-networks-python
 def AnnArchitecture2D(raw):
     x_train, valid_label, y_train, valid_y, classes = getTrainData2D(raw)
-    batch_size = 64
-    epochs = 15
+    batch_size = 128
+    epochs = 10
     num_classes = len(classes)
     
     model = Sequential()
-    model.add(Conv2D(32, kernel_size=(2, 2),activation='linear',input_shape=(3000,2,1),padding='same'))
+    model.add(Conv2D(32, kernel_size=(3, 2),activation='linear',input_shape=(3000,2,1),padding='same'))
     model.add(LeakyReLU(alpha=0.1))
     model.add(MaxPooling2D((2, 2),padding='same'))
+    model.add(Dropout(0.5))
     model.add(Conv2D(64, (2, 2), activation='linear',padding='same'))
     model.add(LeakyReLU(alpha=0.1))
     model.add(MaxPooling2D(pool_size=(2, 2),padding='same'))
@@ -110,11 +155,18 @@ def AnnArchitecture2D(raw):
     model.add(LeakyReLU(alpha=0.1))                  
     model.add(Dense(num_classes, activation='softmax'))
     
-    model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adam(), metrics=['accuracy'])
+    model.compile(loss='categorical_crossentropy', 
+                  optimizer=keras.optimizers.Adam(), metrics=[keras.metrics.CategoricalAccuracy(),
+                                                              keras.metrics.Recall(),
+                                                              keras.metrics.Precision(),
+                                                              keras.metrics.TruePositives(),
+                                                              keras.metrics.TrueNegatives(),
+                                                              keras.metrics.FalsePositives(),
+                                                              keras.metrics.FalseNegatives()])
     #model.summary()
     
     model_train = model.fit(y_train, x_train, batch_size=batch_size,epochs=epochs,verbose=0,validation_data=(valid_y, valid_label))
-    test_eval = model.evaluate(valid_y, valid_label, verbose=0)
+    test_eval = model.evaluate(valid_y, valid_label, verbose=1)
     return model, test_eval
 
 
@@ -130,17 +182,27 @@ def getTrainData2D(raw):
     x_train, valid_label, y_train, valid_y = train_test_split(x_one_hot, y, test_size=0.3, random_state=13)
     classes = np.unique(x)
     
-    return x_train, valid_label, y_train, valid_y, classes
-    
+    return x_train, valid_label, y_train, valid_y, classes    
+
     
 def main():
     consolidateData()
     true_data = normalized_data.copy()
-    model, test_eval = AnnArchitecture1D(true_data)
-    print('Which?', 'all', 'Test loss:', test_eval[0], 'Test accuracy:', test_eval[1])
     
-    for i in list(set([d['label'] for d in true_data])):
-        model, test_eval = AnnArchitecture1D([{"label": 1 if d['label'] == i else 0, "channel_1": d['channel_1'],"channel_2": d['channel_2']} for d in true_data])
-        print('Which?', i, 'Test loss:', test_eval[0], 'Test accuracy:', test_eval[1])
+    epochs = [20, 50, 100]
+    
+    labels = ["spher",
+              "tip",
+              "palm",
+              "lat",
+              "cyl",
+              "hook",]
+    
+    for epoch in epochs:
+        fig = plt.figure(epoch)
+        model, cf_matrix = AnnArchitecture1D(true_data, epoch)
+        sns.heatmap(cf_matrix/np.sum(cf_matrix), annot=True, fmt='.2%', cmap='Blues', xticklabels=labels, yticklabels=labels)
+        plt.savefig("confusion_matrix_{}.png".format(epoch))
+        plt.show()
     
 main()
